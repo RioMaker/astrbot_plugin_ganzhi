@@ -7,4 +7,3 @@ repo: ""
 astrbot_version: ">=4.24.0"
 support_platforms:
   - aiocqhttp
-
