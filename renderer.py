@@ -1,4 +1,4 @@
-"""Compact offline calendar cards with a shared, minimal presentation model."""
+"""Offline Ganzhi cards with a dark celestial theme and explicit personal scope."""
 
 from __future__ import annotations
 
@@ -7,24 +7,24 @@ from io import BytesIO
 from math import atan2, cos, sin
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 WIDTH = 960
 FONT_PATH = Path(__file__).parent / "assets" / "fonts" / "GanzhiSans.otf"
-PAPER = "#F4F3EF"
-WHITE = "#FFFFFF"
-INK = "#252B2D"
-MUTED = "#717675"
-LINE = "#E6E8E3"
-GREEN = "#3E725E"
-RED = "#A55447"
-RELATION_COLORS = {"生": "#348168", "克": "#B75D4B", "同气": "#68756E"}
+INK = "#ECF2F5"
+MUTED = "#9AAEBD"
+LINE = "#2B4153"
+PANEL = "#101F30"
+GREEN = "#74E3BF"
+RED = "#FF9D90"
+GOLD = "#DFC895"
+RELATION_COLORS = {"生": GREEN, "克": RED, "同气": "#A0B5C9"}
 ELEMENT_COLORS = {
-    "木": "#3E7860",
-    "火": "#B05B48",
-    "土": "#96713A",
-    "金": "#647985",
-    "水": "#426A91",
+    "木": "#74E3BF",
+    "火": "#FF9D90",
+    "土": "#E6BF7C",
+    "金": "#EAE3CB",
+    "水": "#91BFFF",
 }
 
 
@@ -39,6 +39,11 @@ def card_content(report: dict) -> dict:
     if personal:
         master = personal["master"] + personal["element"] + "日主"
         identity = {
+            "glyphs": personal["day_pillar"]
+            if len(personal["day_pillar"]) == 2
+            else personal["master"] + personal["element"],
+            "unit": "日柱" if len(personal["day_pillar"]) == 2 else "日主",
+            "element": personal["element"],
             "label": personal["day_pillar"] + "日柱"
             if len(personal["day_pillar"]) == 2
             else master,
@@ -123,11 +128,17 @@ class Renderer:
 
     def render(self, report: dict) -> bytes:
         view = card_content(report)
-        offset = 340
-        height = (1100 if view["daily"] else 850 if view["personal"] else 490) + offset
-        canvas = Image.new("RGB", (WIDTH, height), PAPER)
+        height = 1500 if view["daily"] else 1240 if view["personal"] else 900
+        gradient = Image.linear_gradient("L").resize((WIDTH, height))
+        canvas = ImageOps.colorize(gradient, "#081722", "#111426").convert("RGBA")
+        atmosphere = Image.new("RGBA", canvas.size)
+        haze = ImageDraw.Draw(atmosphere)
+        haze.ellipse((-240, -220, 580, 480), fill=(33, 118, 111, 48))
+        haze.ellipse((620, 100, 1170, 850), fill=(69, 93, 159, 35))
+        haze.ellipse((80, height - 220, 880, height + 320), fill=(51, 75, 114, 32))
+        canvas.alpha_composite(atmosphere.filter(ImageFilter.GaussianBlur(90)))
         draw = ImageDraw.Draw(canvas)
-        fonts = {}
+        fonts, halos = {}, {}
 
         def font(size):
             if size not in fonts:
@@ -135,14 +146,40 @@ class Renderer:
             return fonts[size]
 
         def text(value, x, y, size=26, color=INK, align="left", max_width=None):
-            # Fit finite rule vocabulary and custom fonts without cutting text.
-            while max_width and draw.textlength(value, font=font(size)) > max_width and size > 18:
+            while max_width and draw.textlength(value, font=font(size)) > max_width and size > 16:
                 size -= 1
             anchor = {"left": "lt", "center": "mt", "right": "rt"}[align]
             draw.text((x, y), value, font=font(size), fill=color, anchor=anchor)
 
-        def rule(y, left=60, right=900):
-            draw.line((left, y, right, y), fill=LINE, width=2)
+        def tint(color, amount=0.2, base=PANEL):
+            a, b = ImageColor.getrgb(color), ImageColor.getrgb(base)
+            return tuple(round(x * amount + y * (1 - amount)) for x, y in zip(a, b))
+
+        def panel(box, fill=PANEL, outline=LINE, radius=22):
+            draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=1)
+
+        def pill(value, x, y, color=GREEN, size=19):
+            width = draw.textlength(value, font=font(size)) + 28
+            panel((x, y, x + width, y + 34), tint(color, 0.12), tint(color, 0.4), 9)
+            text(value, x + 14, y + 7, size, color)
+            return width
+
+        def glow(center, color):
+            if color not in halos:
+                halo = Image.new("RGBA", (132, 132))
+                ImageDraw.Draw(halo).ellipse(
+                    (26, 26, 106, 106), fill=(*ImageColor.getrgb(color), 36)
+                )
+                halos[color] = halo.filter(ImageFilter.GaussianBlur(20))
+            canvas.alpha_composite(halos[color], (int(center[0] - 66), int(center[1] - 66)))
+
+        def node(glyph, element, x, y):
+            color = ELEMENT_COLORS[element]
+            glow((x, y), color)
+            draw.ellipse((x - 43, y - 43, x + 43, y + 43), outline=tint(color, 0.28), width=1)
+            draw.arc((x - 48, y - 48, x + 48, y + 48), 215, 280, fill=tint(color, 0.75), width=2)
+            draw.arc((x - 48, y - 48, x + 48, y + 48), 35, 75, fill=tint(color, 0.55), width=2)
+            text(glyph, x, y - 35, 65, color, "center")
 
         def arrow(start, end, relation, label=True, annotation=""):
             color = RELATION_COLORS[relation["kind"]]
@@ -151,8 +188,8 @@ class Renderer:
             dx, dy = end[0] - start[0], end[1] - start[1]
             length = (dx * dx + dy * dy) ** 0.5
             if relation["direction"] == 0:
-                for step in range(0, int(length), 11):
-                    a, b = step / length, min(step + 6, length) / length
+                for step in range(0, int(length), 12):
+                    a, b = step / length, min(step + 5, length) / length
                     draw.line(
                         (
                             start[0] + a * dx,
@@ -164,6 +201,7 @@ class Renderer:
                         width=2,
                     )
             else:
+                draw.line((start, end), fill=tint(color, 0.14), width=6)
                 draw.line((start, end), fill=color, width=2)
 
             def head(tail, tip):
@@ -171,8 +209,8 @@ class Renderer:
                 draw.polygon(
                     (
                         tip,
-                        (tip[0] - 9 * cos(angle - 0.45), tip[1] - 9 * sin(angle - 0.45)),
-                        (tip[0] - 9 * cos(angle + 0.45), tip[1] - 9 * sin(angle + 0.45)),
+                        (tip[0] - 8 * cos(angle - 0.45), tip[1] - 8 * sin(angle - 0.45)),
+                        (tip[0] - 8 * cos(angle + 0.45), tip[1] - 8 * sin(angle + 0.45)),
                     ),
                     fill=color,
                 )
@@ -180,128 +218,176 @@ class Renderer:
             head(start, end)
             if relation["direction"] == 0:
                 head(end, start)
-            if not label:
-                return
-            if dx == 0:
-                text(relation["kind"], start[0] + 13, (start[1] + end[1]) / 2 - 9, 18, color)
-            else:
-                text(relation["kind"], (start[0] + end[0]) / 2, start[1] - 28, 18, color, "center")
-                if annotation:
-                    text(annotation, (start[0] + end[0]) / 2, start[1] + 13, 16, MUTED, "center")
+            if label:
+                if dx == 0:
+                    text(relation["kind"], start[0] + 15, (start[1] + end[1]) / 2 - 9, 18, color)
+                else:
+                    mid = (start[0] + end[0]) / 2
+                    text(relation["kind"], mid, start[1] - 27, 18, color, "center")
+                    if annotation:
+                        text(annotation, mid, start[1] + 14, 17, MUTED, "center")
 
-        # Put the selected natal identity first, separate from the current calendar.
-        accent = GREEN if view["personal"] else RED
-        title_size = 40 if view["personal"] else 32
-        draw.rounded_rectangle((40, 35, 48, 72), radius=3, fill=accent)
-        text(view["title"], 62, 30, title_size)
-        badge_x = 62 + draw.textlength(view["title"], font=font(title_size)) + 20
-        badge_width = draw.textlength(view["badge"], font=font(21)) + 26
-        draw.rounded_rectangle((badge_x, 34, badge_x + badge_width, 70), radius=9, fill=accent)
-        text(view["badge"], badge_x + 13, 41, 21, WHITE)
-        text(view["date"], 920, 36, 28, align="right")
-        text("当前四柱 · " + view["lunar"], 40, 89, 22, MUTED)
-        text(view["time"], 920, 89, 22, MUTED, "right")
-
-        draw.rounded_rectangle((40, 140, 920, 520), radius=24, fill=WHITE)
-        draw.rounded_rectangle((493, 155, 687, 508), radius=18, fill="#F8F5EB")
-        graph = view["graph"]
-        text("干", 65, 226, 18, MUTED)
-        text("支", 65, 363, 18, MUTED)
-        for index, column in enumerate(graph["columns"]):
-            center = 150 + index * 220
-            text(column["label"], center, 166, 23, INK, "center")
-            text(column["stem"], center, 207, 62, ELEMENT_COLORS[column["stem_element"]], "center")
-            text(
-                column["branch"],
-                center,
-                347,
-                62,
-                ELEMENT_COLORS[column["branch_element"]],
-                "center",
+        # Fixed decorative marks carry no astronomical or strength data.
+        for x, y, r in (
+            (420, 67, 2),
+            (590, 129, 1),
+            (541, 39, 1),
+            (906, 197, 2),
+            (18, 416, 1),
+            (936, 687, 2),
+            (24, 778, 1),
+        ):
+            draw.ellipse((x - r, y - r, x + r, y + r), fill="#567084")
+        for radius in (92, 116, 134):
+            draw.arc(
+                (760 - radius, 129 - radius, 760 + radius, 129 + radius),
+                215,
+                330,
+                fill="#29404F",
+                width=1,
             )
-            arrow((center, 290), (center, 325), graph["vertical_edges"][index])
-            text("藏干", center, 427, 17, MUTED, "center")
+            draw.arc(
+                (760 - radius, 129 - radius, 760 + radius, 129 + radius),
+                30,
+                118,
+                fill="#203746",
+                width=1,
+            )
+        draw.polygon(((48, 37), (56, 45), (48, 53), (40, 45)), outline=GREEN)
+        draw.line((48, 40, 48, 50), fill=GREEN, width=1)
+        text("干支  /  GANZHI", 70, 36, 19, GREEN)
+        text(view["badge"], 908, 36, 20, GOLD, "right")
+
+        personal = view["personal"]
+        if personal:
+            color = ELEMENT_COLORS[personal["element"]]
+            text(personal["glyphs"], 43, 82, 82, color)
+            pill(personal["unit"], 229, 122, color, 20)
+            text(personal["master"] + " · " + personal["source"], 48, 183, 22, MUTED)
+        else:
+            text("干支日报" if view["daily"] else "干支纪时", 44, 93, 56)
+            text(
+                "公共环境 · 十日主概览" if view["daily"] else "此刻的四柱与五行", 48, 177, 22, MUTED
+            )
+        text(view["date"], 908, 101, 32, INK, "right")
+        text(view["lunar"], 908, 153, 20, MUTED, "right")
+        text(view["time"], 908, 183, 20, GREEN, "right")
+
+        graph = view["graph"]
+        panel((40, 230, 920, 718))
+        draw.line((65, 230, 340, 230), fill="#54877E", width=2)
+        text("当前四柱", 64, 249, 23)
+        text("天干在上 · 地支在下", 896, 253, 18, MUTED, "right")
+        # All four columns use the same scale; only today's column is highlighted.
+        panel((499, 288, 681, 626), "#162B39", "#365466", 17)
+        text("干", 66, 363, 17, MUTED)
+        text("支", 66, 496, 17, MUTED)
+        for index, column in enumerate(graph["columns"]):
+            center = 154 + index * 218
+            text(column["label"] + "柱", center, 299, 20, GREEN if index == 2 else MUTED, "center")
+            node(column["stem"], column["stem_element"], center, 373)
+            node(column["branch"], column["branch_element"], center, 506)
+            arrow((center, 424), (center, 453), graph["vertical_edges"][index])
+            text("藏干", center, 559, 16, MUTED, "center")
             hidden = column["hidden"]
-            left = center - (len(hidden) * 56 + (len(hidden) - 1) * 5) / 2
+            left = center - (len(hidden) * 53 + (len(hidden) - 1) * 5) / 2
             for number, item in enumerate(hidden):
-                x = left + number * 61
+                x = left + number * 58
                 color = ELEMENT_COLORS[item["element"]]
-                draw.rounded_rectangle(
-                    (x, 455, x + 56, 494),
-                    radius=7,
-                    fill=color if number == 0 else WHITE,
-                    outline=color,
-                    width=1,
+                panel(
+                    (x, 587, x + 53, 619),
+                    color if number == 0 else PANEL,
+                    color if number == 0 else tint(color, 0.5),
+                    6,
                 )
                 text(
                     item["stem"] + item["element"],
-                    x + 28,
-                    464,
-                    19,
-                    WHITE if number == 0 else color,
+                    x + 26.5,
+                    594,
+                    18,
+                    "#102032" if number == 0 else color,
                     "center",
                 )
             if index < 3:
-                arrow((center + 47, 243), (center + 173, 243), graph["stem_edges"][index])
+                arrow((center + 54, 373), (center + 164, 373), graph["stem_edges"][index])
                 arrow(
-                    (center + 47, 380),
-                    (center + 173, 380),
+                    (center + 54, 506),
+                    (center + 164, 506),
                     graph["branch_edges"][index],
                     annotation=view["branch_annotations"][index],
                 )
-        # Legend symbols use the very same arrow renderer as the data diagram.
-        draw.rounded_rectangle((40, 534, 920, 630), radius=18, fill=WHITE)
-        text("图例", 64, 553, 19, MUTED)
-        for kind, x, direction in (("生", 140, 1), ("克", 292, 1), ("同气", 444, 0)):
-            arrow((x, 565), (x + 55, 565), {"kind": kind, "direction": direction}, label=False)
-            text(kind, x + 68, 553, 21, RELATION_COLORS[kind])
-        draw.rounded_rectangle((650, 547, 692, 578), radius=7, outline="#96713A", width=1)
-        text("合", 671, 553, 19, "#96713A", "center")
-        text("未定化", 704, 553, 21, "#96713A")
-        text("横向相邻 · 纵向本气 · 线下标支关系 · 藏干实底为本气，描边为兼气", 64, 598, 17, MUTED)
-        if graph["combinations"]:
-            text("关系", 48, 660, 21, MUTED)
-            text(graph["combinations"], 126, 660, 19, INK, max_width=780)
 
-        text("五行", 48, 378 + offset, 23, MUTED)
-        text(view["overview"], 126, 377 + offset, 26, INK, max_width=780)
+        draw.line((64, 640, 896, 640), fill=LINE, width=1)
+        text("图例", 65, 660, 17, MUTED)
+        for kind, x, direction in (("生", 142, 1), ("克", 302, 1), ("同气", 462, 0)):
+            arrow((x, 670), (x + 48, 670), {"kind": kind, "direction": direction}, label=False)
+            text(kind, x + 62, 660, 19, RELATION_COLORS[kind])
+        text("合 · 未定化", 730, 660, 19, GOLD)
+        text("横向相邻 / 纵向本气 / 线下标支关系 / 藏干实底为本气、描边为兼气", 65, 694, 16, MUTED)
 
-        if view["personal"]:
-            p = view["personal"]
-            draw.rounded_rectangle((40, 773, 920, 870), radius=22, fill="#294D40")
-            text("分析对象", 66, 790, 18, "#C4D8CD")
-            text(p["label"], 66, 821, 34, WHITE)
-            draw.line((298, 795, 298, 860), fill="#597568", width=1)
-            text(p["master"] + " · " + p["source"], 326, 794, 22, "#C4D8CD")
-            text(p["scope"], 326, 834, 26, WHITE)
+        panel((40, 738, 920, 834), "#122332", "#2D4958", 18)
+        draw.rounded_rectangle((62, 758, 65, 783), radius=1, fill=GREEN)
+        text("五行流通", 80, 759, 21, GREEN)
+        text(view["overview"], 198, 757, 25, INK, max_width=695)
+        text(
+            graph["combinations"] or "干支关系 · 暂无需额外标注的合冲刑害",
+            64,
+            802,
+            18,
+            MUTED,
+            max_width=830,
+        )
+
+        if personal:
+            panel((40, 854, 920, 912), "#15322F", "#36675A", 15)
+            draw.polygon(((66, 876), (73, 883), (66, 890), (59, 883)), fill=GREEN)
+            text(personal["label"] + " · 个人宜忌", 90, 872, 22, INK)
+            text(personal["scope"], 894, 875, 20, GREEN, "right")
             for index, (label, advice) in enumerate(
-                (("个人 · 今日", p["today"]), ("个人 · " + view["hour_range"], p["hour"]))
+                (("今日", personal["today"]), (view["hour_range"], personal["hour"]))
             ):
                 x = 40 + index * 450
-                draw.rounded_rectangle(
-                    (x, 540 + offset, x + 430, 780 + offset), radius=22, fill=WHITE
-                )
-                text(label, x + 26, 565 + offset, 21, GREEN, max_width=380)
-                text(advice["theme"], x + 26, 610 + offset, 31, max_width=378)
-                text("宜", x + 26, 673 + offset, 24, GREEN)
-                text(advice["yi"][0], x + 71, 673 + offset, 25, max_width=332)
-                text("忌", x + 26, 719 + offset, 24, RED)
-                text(advice["ji"][0], x + 71, 719 + offset, 25, max_width=332)
+                accent = GREEN if index == 0 else ELEMENT_COLORS["水"]
+                panel((x, 928, x + 430, 1182), "#132434", "#314B5C", 22)
+                draw.line((x + 25, 928, x + 130, 928), fill=accent, width=2)
+                draw.ellipse((x + 26, 952, x + 33, 959), fill=accent)
+                text(label, x + 44, 946, 20, accent, max_width=361)
+                text(advice["theme"], x + 26, 987, 30, INK, max_width=378)
+                draw.line((x + 26, 1036, x + 404, 1036), fill=LINE, width=1)
+                for mark, values, y, color in (
+                    ("宜", advice["yi"], 1056, GREEN),
+                    ("忌", advice["ji"], 1112, RED),
+                ):
+                    panel((x + 25, y, x + 61, y + 36), tint(color, 0.13), tint(color, 0.28), 8)
+                    text(mark, x + 43, y + 7, 21, color, "center")
+                    text(values[0], x + 79, y + 5, 25, INK, max_width=323)
         elif view["daily"]:
-            draw.rounded_rectangle((40, 437 + offset, 920, 1032 + offset), radius=22, fill=WHITE)
-            for title, x in (("日主", 64), ("今日主题", 177), ("宜", 495), ("忌", 704)):
-                text(title, x, 463 + offset, 21, MUTED)
-            rule(501 + offset)
+            panel((40, 854, 920, 1438), "#122231", "#314B5C", 22)
+            text("十日主 · 今日简览", 64, 876, 25)
+            text("按各自日主查看宜忌", 895, 880, 19, GOLD, "right")
+            for title, x in (("日主", 76), ("今日主题", 185), ("宜", 510), ("忌", 710)):
+                text(title, x, 924, 19, MUTED)
+            draw.line((64, 955, 896, 955), fill=LINE, width=1)
             for index, item in enumerate(view["daily"]):
-                y = 520 + index * 50 + offset
-                text(item["master"], 64, y, 26)
-                text(item["theme"], 177, y + 2, 23, max_width=294)
-                text(item["yi"], 495, y + 2, 23, GREEN, max_width=188)
-                text(item["ji"], 704, y + 2, 23, RED, max_width=188)
-        else:
-            text(view["hour_range"], 48, 432 + offset, 21, MUTED)
+                y = 964 + index * 46
+                if index % 2 == 0:
+                    draw.rounded_rectangle((57, y - 2, 903, y + 40), radius=6, fill="#192D3D")
+                color = ELEMENT_COLORS[item["master"][1]]
+                draw.rounded_rectangle((64, y + 10, 67, y + 26), radius=1, fill=color)
+                text(item["master"], 78, y + 5, 24, color)
+                text(item["theme"], 185, y + 6, 22, INK, max_width=304)
+                text(item["yi"], 510, y + 6, 22, GREEN, max_width=182)
+                text(item["ji"], 710, y + 6, 22, RED, max_width=183)
 
-        text(view["footer"], 912, height - 37, 18, MUTED, "right")
+        text(
+            "GANZHI  /  "
+            + (view["hour_range"] if not personal and not view["daily"] else "干支纪时"),
+            48,
+            height - 35,
+            16,
+            MUTED,
+        )
+        text(view["footer"], 912, height - 35, 16, MUTED, "right")
         result = BytesIO()
-        canvas.save(result, "PNG", optimize=True)
+        canvas.convert("RGB").save(result, "PNG", optimize=True)
         return result.getvalue()

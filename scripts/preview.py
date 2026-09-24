@@ -54,12 +54,12 @@ cards = "\n".join(
     '<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width,initial-scale=1">'
     "<title>干支 · 指令图片一览</title><style>"
-    "body{margin:0;background:#f4f3ef;color:#252b2d;font:16px/1.7 system-ui,sans-serif}"
+    "body{margin:0;background:#091722;color:#ecf2f5;font:16px/1.7 system-ui,sans-serif}"
     "header,main{max-width:1440px;margin:auto;padding:24px}h1{margin:0;font-size:28px}"
-    "p{margin:8px 0;color:#59645e}main{display:grid;grid-template-columns:"
+    "p{margin:8px 0;color:#9aaebd}main{display:grid;grid-template-columns:"
     "repeat(auto-fit,minmax(min(100%,420px),1fr));gap:28px;padding-top:0}"
     "section{min-width:0}h2{font-size:18px;min-height:62px;margin:0 0 12px}"
-    "img{display:block;width:100%;border-radius:14px;border:1px solid #e1e4dd}"
+    "img{display:block;width:100%;border-radius:14px;border:1px solid #2b4153}"
     "</style><header><h1>干支 · 指令图片一览</h1>"
     "<p>同一渲染器实算：2026-09-24 北京时间，普通查询 14:00，日报 08:00。"
     "示例资料不代表用户绑定。</p>"
