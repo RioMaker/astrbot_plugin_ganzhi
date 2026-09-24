@@ -22,6 +22,6 @@ def test_png_variants_and_character_coverage():
         png = renderer.render(report)
         image = Image.open(BytesIO(png))
         assert image.width == 960
-        assert image.height == (1350 if daily else 1040 if profile else 740)
+        assert image.height == (1440 if daily else 1130 if profile else 830)
         image.verify()
         assert {ord(x) for x in compact_text(report) if not x.isspace()} <= set(cmap)

@@ -1,8 +1,8 @@
 {
   "source": "https://github.com/notofonts/noto-cjk/blob/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
   "source_sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
-  "output_sha256": "0bfd0c999a0a4f91b758cc17d26564eff6aae2acba26c26d0f0e2498c9fa5910",
-  "output_bytes": 361828,
+  "output_sha256": "499ed67d8d22165cf1cd49b22a65833a0e0920e55c2436606d8bb0d61c4290ae",
+  "output_bytes": 362700,
   "license": "SIL Open Font License 1.1; see LICENSE.txt",
   "modification": "Subset of display vocabulary, renamed GanzhiSans; original font copyright retained in font metadata."
 }

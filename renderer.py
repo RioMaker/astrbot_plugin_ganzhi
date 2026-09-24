@@ -16,11 +16,16 @@ WHITE = "#FFFFFF"
 INK = "#252B2D"
 MUTED = "#717675"
 LINE = "#E6E8E3"
-HERO = "#273E3B"
-CREAM = "#EBDDB5"
 GREEN = "#3E725E"
 RED = "#A55447"
-RELATION_COLORS = {"生": "#A7D4B6", "克": "#F2B4A1", "同气": "#BECBC5"}
+RELATION_COLORS = {"生": "#348168", "克": "#B75D4B", "同气": "#68756E"}
+ELEMENT_COLORS = {
+    "木": "#3E7860",
+    "火": "#B05B48",
+    "土": "#96713A",
+    "金": "#647985",
+    "水": "#426A91",
+}
 
 
 def card_content(report: dict) -> dict:
@@ -44,6 +49,14 @@ def card_content(report: dict) -> dict:
         "hour_range": cal["hour_range"],
         "overview": overview,
         "graph": report["pillar_graph"],
+        "branch_annotations": [
+            " · ".join(
+                r["kind"]
+                for r in report["current_flow"]["branch_relations"]
+                if r["indices"] == [index, index + 1]
+            )
+            for index in range(3)
+        ],
         "personal": {
             "label": f"{personal['day_pillar']} · {personal['master']}{personal['element']}日主",
             "today": personal["day_advice"],
@@ -98,7 +111,7 @@ class Renderer:
 
     def render(self, report: dict) -> bytes:
         view = card_content(report)
-        offset = 250
+        offset = 340
         height = (1100 if view["daily"] else 790 if view["personal"] else 490) + offset
         canvas = Image.new("RGB", (WIDTH, height), PAPER)
         draw = ImageDraw.Draw(canvas)
@@ -119,7 +132,7 @@ class Renderer:
         def rule(y, left=60, right=900):
             draw.line((left, y, right, y), fill=LINE, width=2)
 
-        def arrow(start, end, relation):
+        def arrow(start, end, relation, label=True, annotation=""):
             color = RELATION_COLORS[relation["kind"]]
             if relation["direction"] == -1:
                 start, end = end, start
@@ -155,10 +168,14 @@ class Renderer:
             head(start, end)
             if relation["direction"] == 0:
                 head(end, start)
+            if not label:
+                return
             if dx == 0:
                 text(relation["kind"], start[0] + 13, (start[1] + end[1]) / 2 - 9, 18, color)
             else:
                 text(relation["kind"], (start[0] + end[0]) / 2, start[1] - 28, 18, color, "center")
+                if annotation:
+                    text(annotation, (start[0] + end[0]) / 2, start[1] + 13, 16, MUTED, "center")
 
         # One restrained red mark gives the calendar an identity without ornament.
         draw.rounded_rectangle((40, 38, 48, 68), radius=3, fill=RED)
@@ -167,37 +184,66 @@ class Renderer:
         text(view["lunar"], 40, 89, 22, MUTED)
         text(view["time"], 920, 89, 22, MUTED, "right")
 
-        draw.rounded_rectangle((40, 140, 920, 345 + offset), radius=24, fill=HERO)
+        draw.rounded_rectangle((40, 140, 920, 520), radius=24, fill=WHITE)
+        draw.rounded_rectangle((493, 155, 687, 508), radius=18, fill="#F8F5EB")
         graph = view["graph"]
-        text("干", 65, 226, 18, "#BECBC5")
-        text("支", 65, 363, 18, "#BECBC5")
+        text("干", 65, 226, 18, MUTED)
+        text("支", 65, 363, 18, MUTED)
         for index, column in enumerate(graph["columns"]):
             center = 150 + index * 220
-            color = CREAM if column["label"] == "日" else WHITE
-            text(column["label"], center, 166, 23, color, "center")
-            text(column["stem"], center, 207, 62, color, "center")
-            text(column["branch"], center, 347, 62, color, "center")
+            text(column["label"], center, 166, 23, INK, "center")
+            text(column["stem"], center, 207, 62, ELEMENT_COLORS[column["stem_element"]], "center")
+            text(
+                column["branch"],
+                center,
+                347,
+                62,
+                ELEMENT_COLORS[column["branch_element"]],
+                "center",
+            )
             arrow((center, 290), (center, 325), graph["vertical_edges"][index])
-            text("藏干", center, 427, 17, "#BECBC5", "center")
+            text("藏干", center, 427, 17, MUTED, "center")
             hidden = column["hidden"]
             left = center - (len(hidden) * 56 + (len(hidden) - 1) * 5) / 2
             for number, item in enumerate(hidden):
                 x = left + number * 61
-                draw.rounded_rectangle((x, 455, x + 56, 494), radius=7, fill="#3D5350")
+                color = ELEMENT_COLORS[item["element"]]
+                draw.rounded_rectangle(
+                    (x, 455, x + 56, 494),
+                    radius=7,
+                    fill=color if number == 0 else WHITE,
+                    outline=color,
+                    width=1,
+                )
                 text(
                     item["stem"] + item["element"],
                     x + 28,
                     464,
                     19,
-                    CREAM if number == 0 else WHITE,
+                    WHITE if number == 0 else color,
                     "center",
                 )
             if index < 3:
                 arrow((center + 47, 243), (center + 173, 243), graph["stem_edges"][index])
-                arrow((center + 47, 380), (center + 173, 380), graph["branch_edges"][index])
-        text("横向看相邻柱 · 纵向看干支本气 · 藏干本气在前", 66, 519, 17, "#BECBC5")
+                arrow(
+                    (center + 47, 380),
+                    (center + 173, 380),
+                    graph["branch_edges"][index],
+                    annotation=view["branch_annotations"][index],
+                )
+        # Legend symbols use the very same arrow renderer as the data diagram.
+        draw.rounded_rectangle((40, 534, 920, 630), radius=18, fill=WHITE)
+        text("图例", 64, 553, 19, MUTED)
+        for kind, x, direction in (("生", 140, 1), ("克", 292, 1), ("同气", 444, 0)):
+            arrow((x, 565), (x + 55, 565), {"kind": kind, "direction": direction}, label=False)
+            text(kind, x + 68, 553, 21, RELATION_COLORS[kind])
+        draw.rounded_rectangle((650, 547, 692, 578), radius=7, outline="#96713A", width=1)
+        text("合", 671, 553, 19, "#96713A", "center")
+        text("未定化", 704, 553, 21, "#96713A")
+        text("横向相邻 · 纵向本气 · 线下标支关系 · 藏干实底为本气，描边为兼气", 64, 598, 17, MUTED)
         if graph["combinations"]:
-            text(graph["combinations"], 66, 554, 18, CREAM, max_width=826)
+            text("关系", 48, 660, 21, MUTED)
+            text(graph["combinations"], 126, 660, 19, INK, max_width=780)
 
         text("五行", 48, 378 + offset, 23, MUTED)
         text(view["overview"], 126, 377 + offset, 26, INK, max_width=780)
