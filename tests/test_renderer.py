@@ -2,8 +2,8 @@ from datetime import datetime
 from io import BytesIO
 
 from astrbot_plugin_ganzhi.calendar_core import BEIJING, parse_profile, snapshot
-from astrbot_plugin_ganzhi.engine import build_report, format_text
-from astrbot_plugin_ganzhi.renderer import FONT_PATH, Renderer
+from astrbot_plugin_ganzhi.engine import build_report
+from astrbot_plugin_ganzhi.renderer import FONT_PATH, Renderer, compact_text
 from fontTools.ttLib import TTFont
 from PIL import Image
 
@@ -21,6 +21,7 @@ def test_png_variants_and_character_coverage():
         report = build_report(cal, profile, daily)
         png = renderer.render(report)
         image = Image.open(BytesIO(png))
-        assert image.width == 1120 and 900 < image.height < 4000
+        assert image.width == 960
+        assert image.height == (1100 if daily else 790 if profile else 490)
         image.verify()
-        assert {ord(x) for x in format_text(report) if not x.isspace()} <= set(cmap)
+        assert {ord(x) for x in compact_text(report) if not x.isspace()} <= set(cmap)

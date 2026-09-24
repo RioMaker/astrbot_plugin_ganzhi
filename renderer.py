@@ -1,154 +1,165 @@
-"""Offline PNG card; measured Chinese wrapping, no network or persistent image cache."""
+"""Compact offline calendar cards with a shared, minimal presentation model."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from .engine import ELEMENTS, STEM_ELEMENT
-
-BG = "#F5F1E8"
-INK = "#262D29"
-MUTED = "#646C64"
-JADE = "#285D4C"
-RED = "#9A4838"
-COLORS = {"木": "#397C60", "火": "#AD5540", "土": "#90723D", "金": "#7A7B80", "水": "#436D92"}
-WIDTH = 1120
+WIDTH = 960
 FONT_PATH = Path(__file__).parent / "assets" / "fonts" / "GanzhiSans.otf"
+PAPER = "#F4F3EF"
+WHITE = "#FFFFFF"
+INK = "#252B2D"
+MUTED = "#717675"
+LINE = "#E6E8E3"
+HERO = "#273E3B"
+CREAM = "#EBDDB5"
+GREEN = "#3E725E"
+RED = "#A55447"
+
+
+def card_content(report: dict) -> dict:
+    """Keep the public card concise; the full evidence remains in agent_payload."""
+    cal = report["calendar"]
+    flow = report["day_flow"]
+    paths = flow["generation_paths"][:2]
+    overview = flow["dominant"][0] + "气较显"
+    overview += " · " + ("、".join(paths) if paths else "相生承接偏弱")
+    instant = datetime.fromisoformat(cal["instant"])
+    personal = report["personal"]
+    return {
+        "title": "干支日报" if report["ten_masters"] else "干支",
+        "date": instant.strftime("%Y.%m.%d"),
+        "time": f"{instant.hour:02}时 · 北京时间",
+        "lunar": "农历" + cal["lunar_date"],
+        "pillars": [
+            ("年", cal["year"]),
+            ("月", cal["month"]),
+            ("日", cal["day"]),
+            ("时", cal["hour"]),
+        ],
+        "hour_range": cal["hour_range"],
+        "overview": overview,
+        "personal": {
+            "label": f"{personal['day_pillar']} · {personal['master']}{personal['element']}日主",
+            "today": personal["day_advice"],
+            "hour": personal["hour_advice"],
+        }
+        if personal
+        else None,
+        "daily": [
+            {
+                "master": p["master"] + p["element"],
+                "theme": p["day_advice"]["theme"],
+                "yi": p["day_advice"]["yi"][0],
+                "ji": p["day_advice"]["ji"][0],
+            }
+            for p in report["ten_masters"]
+        ],
+        "footer": "日常参考" + (" · 子初换日" if cal["boundary"] == "zi" else ""),
+    }
+
+
+def compact_text(report: dict) -> str:
+    """The image fallback follows the same reduced information hierarchy."""
+    view = card_content(report)
+    lines = [
+        f"{view['title']} · {view['date']} {view['time']}",
+        "  ".join(value + label for label, value in view["pillars"]),
+        view["hour_range"],
+        view["overview"],
+    ]
+    if view["personal"]:
+        p = view["personal"]
+        lines.append(p["label"])
+        for label, advice in (("今日", p["today"]), ("此刻", p["hour"])):
+            lines.append(
+                f"{label} · {advice['theme']}\n宜 {advice['yi'][0]}  /  忌 {advice['ji'][0]}"
+            )
+    for p in view["daily"]:
+        lines.append(f"{p['master']} · {p['theme']}；宜 {p['yi']} / 忌 {p['ji']}")
+    lines.append(view["footer"])
+    return "\n".join(lines)
 
 
 class Renderer:
     def __init__(self, font_path: str = ""):
         self.font_path = Path(font_path) if font_path else FONT_PATH
-        # Fail visibly at construction; callers retain a text fallback.
         ImageFont.truetype(str(self.font_path), 28)
 
     def render(self, report: dict) -> bytes:
-        fonts = {
-            size: ImageFont.truetype(str(self.font_path), size)
-            for size in (22, 25, 28, 30, 34, 48, 68)
-        }
-        # Layout is measured first, then drawn to the exact height.
-        probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-        ops = []
-        y = 44
-
-        def text(value, x, top, size=28, color=INK):
-            ops.append(("text", (x, top), value, size, color))
-
-        def para(value, size=28, color=INK, x=52, width=1016, gap=10):
-            nonlocal y
-            for block in str(value).split("\n"):
-                line = ""
-                for char in block:
-                    if line and probe.textlength(line + char, font=fonts[size]) > width:
-                        text(line, x, y, size, color)
-                        y += int(size * 1.55)
-                        line = char
-                    else:
-                        line += char
-                text(line, x, y, size, color)
-                y += int(size * 1.55)
-            y += gap
-
-        def section(label):
-            nonlocal y
-            y += 15
-            ops.append(("line", (52, y, WIDTH - 52, y), "#D9DACE"))
-            y += 22
-            para(label, 30, JADE, gap=12)
-
-        cal = report["calendar"]
-        para("GANZHI  /  干支纪时", 22, JADE, gap=18)
-        para("今日干支日报" if report["ten_masters"] else "此时 · 此日", 48, gap=8)
-        para(
-            f"{cal['instant'][:13].replace('T', ' ')}时  北京时间  ·  农历{cal['lunar_date']}",
-            25,
-            MUTED,
-            gap=24,
-        )
-        top = y
-        for i, (label, key) in enumerate(
-            (("年柱", "year"), ("月柱", "month"), ("日柱", "day"), ("时柱", "hour"))
-        ):
-            x = 52 + i * 259
-            ops.append(("rect", (x, top, x + 239, top + 192), "#FFFCF5"))
-            text(label, x + 24, top + 18, 25, MUTED)
-            text(cal[key], x + 24, top + 63, 68, COLORS[STEM_ELEMENT[cal[key][0]]])
-            text(
-                STEM_ELEMENT[cal[key][0]] + " · " + cal[key][1] + "支", x + 24, top + 154, 22, MUTED
-            )
-        y += 216
-        boundary = "零点换日" if cal["boundary"] == "midnight" else "子初换日"
-        para(f"{cal['hour_range']}  ·  立春换年 / 节气换月 / {boundary}", 22, MUTED)
-        section("01  今日五行流通")
-        f = report["day_flow"]
-        for element in ELEMENTS:
-            value = f["percent"][element]
-            text(f"{element}  {f['season_states'][element]}", 52, y, 28, COLORS[element])
-            ops.append(("rect", (176, y + 11, 854, y + 31), "#E1E3DA"))
-            if value:
-                ops.append(
-                    ("rect", (176, y + 11, 176 + 678 * value / 100, y + 31), COLORS[element])
-                )
-            text(f"{value:4.1f}%", 901, y, 28, INK)
-            y += 50
-        y += 8
-        para(f["summary"], 28)
-        para("承接偏弱：" + ("、".join(f["weak_paths"]) or "无低于阈值的相生边"), 25, MUTED)
-        para("占比表示当前环境的相对权重，用于说明依据。", 22, MUTED)
-        p = report["personal"]
-        if p:
-            section(f"02  你的日主 · {p['master']}{p['element']}  /  {p['day_pillar']}")
-            para(f"今日{p['day_god']} · {p['day_advice']['theme']}", 34)
-            para(p["environment_note"], 25, MUTED)
-            para("宜  " + " · ".join(p["day_advice"]["yi"]), 28, JADE)
-            para("忌  " + " · ".join(p["day_advice"]["ji"]), 28, RED)
-            para(
-                "日支藏干：" + " / ".join(x["stem"] + "·" + x["god"] for x in p["day_hidden"]),
-                25,
-                MUTED,
-            )
-            for link in p["day_links"]:
-                para(link, 25, MUTED)
-            section(f"03  当前时辰 · {cal['hour_range']}")
-            para(f"{p['hour_god']} · {p['hour_advice']['theme']}", 34)
-            para("宜  " + " · ".join(p["hour_advice"]["yi"]), 28, JADE)
-            para("忌  " + " · ".join(p["hour_advice"]["ji"]), 28, RED)
-            for link in p["hour_links"]:
-                para(link, 25, MUTED)
-            para("仅据日主与今日环境研判，未定本命强弱与用神。", 22, MUTED)
-        elif not report["ten_masters"]:
-            section("02  加入你的日主")
-            para("/干支 辛巳   或   /干支 20010319", 28)
-            para("生日默认阳历；/干支 绑定 20010319 可保存资料。", 25, MUTED)
-        if report["ten_masters"]:
-            section("02  十天干日主 · 今日简览")
-            for p in report["ten_masters"]:
-                para(
-                    f"{p['master']}{p['element']}  /  {p['day_god']} · {p['day_advice']['theme']}",
-                    28,
-                )
-                para(
-                    f"宜 {p['day_advice']['yi'][0]}   ·   忌 {p['day_advice']['ji'][0]}",
-                    25,
-                    MUTED,
-                    gap=20,
-                )
-        section("日常安排参考")
-        para("宜忌取自插件内置规则文档；更多依据可请 AI 解读。", 22, MUTED)
-        para("传统文化参考  ·  ganzhi 0.1.0", 22, MUTED, gap=0)
-        canvas = Image.new("RGB", (WIDTH, y + 44), BG)
+        view = card_content(report)
+        height = 1100 if view["daily"] else 790 if view["personal"] else 490
+        canvas = Image.new("RGB", (WIDTH, height), PAPER)
         draw = ImageDraw.Draw(canvas)
-        for op in ops:
-            if op[0] == "text":
-                draw.text(op[1], op[2], font=fonts[op[3]], fill=op[4])
-            elif op[0] == "rect":
-                draw.rectangle(op[1], fill=op[2])
-            elif op[0] == "line":
-                draw.line(op[1], fill=op[2], width=2)
+        fonts = {}
+
+        def font(size):
+            if size not in fonts:
+                fonts[size] = ImageFont.truetype(str(self.font_path), size)
+            return fonts[size]
+
+        def text(value, x, y, size=26, color=INK, align="left", max_width=None):
+            # Fit finite rule vocabulary and custom fonts without cutting text.
+            while max_width and draw.textlength(value, font=font(size)) > max_width and size > 18:
+                size -= 1
+            anchor = {"left": "lt", "center": "mt", "right": "rt"}[align]
+            draw.text((x, y), value, font=font(size), fill=color, anchor=anchor)
+
+        def rule(y, left=60, right=900):
+            draw.line((left, y, right, y), fill=LINE, width=2)
+
+        # One restrained red mark gives the calendar an identity without ornament.
+        draw.rounded_rectangle((40, 38, 48, 68), radius=3, fill=RED)
+        text(view["title"], 62, 36, 28)
+        text(view["date"], 920, 36, 28, align="right")
+        text(view["lunar"], 40, 89, 22, MUTED)
+        text(view["time"], 920, 89, 22, MUTED, "right")
+
+        draw.rounded_rectangle((40, 140, 920, 345), radius=24, fill=HERO)
+        for index, (label, pillar) in enumerate(view["pillars"]):
+            center = 150 + index * 220
+            color = CREAM if label == "日" else WHITE
+            text(label, center, 173, 23, color, "center")
+            text(pillar, center, 224, 66, color, "center", 196)
+            if index < 3:
+                draw.line((260 + index * 220, 192, 260 + index * 220, 296), fill="#4B5E59")
+
+        text("五行", 48, 378, 23, MUTED)
+        text(view["overview"], 126, 377, 26, INK, max_width=780)
+
+        if view["personal"]:
+            p = view["personal"]
+            text(p["label"], 48, 439, 22, MUTED)
+            for index, (label, advice) in enumerate(
+                (("今日", p["today"]), ("此刻 · " + view["hour_range"], p["hour"]))
+            ):
+                x = 40 + index * 450
+                draw.rounded_rectangle((x, 480, x + 430, 720), radius=22, fill=WHITE)
+                text(label, x + 26, 505, 21, MUTED, max_width=380)
+                text(advice["theme"], x + 26, 550, 31, max_width=378)
+                text("宜", x + 26, 613, 24, GREEN)
+                text(advice["yi"][0], x + 71, 613, 25, max_width=332)
+                text("忌", x + 26, 659, 24, RED)
+                text(advice["ji"][0], x + 71, 659, 25, max_width=332)
+        elif view["daily"]:
+            draw.rounded_rectangle((40, 437, 920, 1032), radius=22, fill=WHITE)
+            for title, x in (("日主", 64), ("今日主题", 177), ("宜", 495), ("忌", 704)):
+                text(title, x, 463, 21, MUTED)
+            rule(501)
+            for index, item in enumerate(view["daily"]):
+                y = 520 + index * 50
+                text(item["master"], 64, y, 26)
+                text(item["theme"], 177, y + 2, 23, max_width=294)
+                text(item["yi"], 495, y + 2, 23, GREEN, max_width=188)
+                text(item["ji"], 704, y + 2, 23, RED, max_width=188)
+        else:
+            text(view["hour_range"], 48, 432, 21, MUTED)
+
+        text(view["footer"], 912, height - 37, 18, MUTED, "right")
         result = BytesIO()
         canvas.save(result, "PNG", optimize=True)
         return result.getvalue()

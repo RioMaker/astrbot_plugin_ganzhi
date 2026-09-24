@@ -12,8 +12,8 @@ from astrbot.api.star import Context, Star, register
 from astrbot.core.star.filter.command import GreedyStr
 
 from .calendar_core import now_beijing, parse_profile, snapshot
-from .engine import agent_payload, build_report, format_text
-from .renderer import Renderer
+from .engine import agent_payload, build_report
+from .renderer import Renderer, compact_text
 from .scheduler import DailyScheduler
 
 HELP_TEXT = """ganzhi · 干支纪时与日主日运
@@ -82,7 +82,7 @@ def capture(event):
     )
 
 
-@register("astrbot_plugin_ganzhi", "Rio", "干支纪时、日主日运与群日报", "0.1.0")
+@register("astrbot_plugin_ganzhi", "Rio", "干支纪时、日主日运与群日报", "0.1.1")
 class GanzhiPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -203,7 +203,7 @@ class GanzhiPlugin(Star):
                 return [Image.fromBytes(png)]
             except Exception as exc:
                 logger.warning(f"ganzhi 图片生成失败：{type(exc).__name__}")
-        return [Plain("图片暂不可用，以下为文字内容：\n" + format_text(report))]
+        return [Plain("图片暂不可用，以下为文字内容：\n" + compact_text(report))]
 
     @filter.command("干支", alias={"干支纪年法", "干支纪时法"})
     async def ganzhi_command(self, event: AstrMessageEvent, content: GreedyStr):
@@ -331,8 +331,9 @@ class GanzhiPlugin(Star):
                         raise ValueError("无可用日报模型")
                     return await self.context.llm_generate(
                         chat_provider_id=provider_id,
-                        prompt="请写群公共干支日报，约600–1000字。先报年、月、日干支与五行流通，"
-                        "然后逐个覆盖甲乙丙丁戊己庚辛壬癸十个日主，每个给一句主题和宜忌。"
+                        prompt="请写简短群公共干支日报，控制在250–400字。先用一句话报当日干支与五行流通，"
+                        "然后逐个覆盖甲乙丙丁戊己庚辛壬癸十个日主，每个只写一行短建议。"
+                        "图片已有宜忌表，不要重复整表，不写长篇原理、百分比、免责声明和结尾总结。"
                         "不针对群成员，不编造完整命局，不改写工具历法结果。依据：\n"
                         + agent_payload(report),
                     )
