@@ -168,17 +168,15 @@ class Renderer:
             if color not in halos:
                 halo = Image.new("RGBA", (132, 132))
                 ImageDraw.Draw(halo).ellipse(
-                    (26, 26, 106, 106), fill=(*ImageColor.getrgb(color), 36)
+                    (27, 36, 105, 96), fill=(*ImageColor.getrgb(color), 20)
                 )
-                halos[color] = halo.filter(ImageFilter.GaussianBlur(20))
+                halos[color] = halo.filter(ImageFilter.GaussianBlur(26))
             canvas.alpha_composite(halos[color], (int(center[0] - 66), int(center[1] - 66)))
 
         def node(glyph, element, x, y):
             color = ELEMENT_COLORS[element]
             glow((x, y), color)
-            draw.ellipse((x - 43, y - 43, x + 43, y + 43), outline=tint(color, 0.28), width=1)
-            draw.arc((x - 48, y - 48, x + 48, y + 48), 215, 280, fill=tint(color, 0.75), width=2)
-            draw.arc((x - 48, y - 48, x + 48, y + 48), 35, 75, fill=tint(color, 0.55), width=2)
+            # Keep glyph outlines clear; the only visible lines describe relationships.
             text(glyph, x, y - 35, 65, color, "center")
 
         def arrow(start, end, relation, label=True, annotation=""):
