@@ -35,8 +35,26 @@ def card_content(report: dict) -> dict:
     overview = flow["display_summary"]
     instant = datetime.fromisoformat(cal["instant"])
     personal = report["personal"]
+    identity = None
+    if personal:
+        master = personal["master"] + personal["element"] + "日主"
+        identity = {
+            "label": personal["day_pillar"] + "日柱"
+            if len(personal["day_pillar"]) == 2
+            else master,
+            "master": master,
+            "source": {
+                "birthday": "阳历生日换算",
+                "pillar": "指定日柱",
+                "stem": "仅提供日干",
+            }[personal["source"]],
+            "scope": "以下宜忌仅针对该日主",
+            "today": personal["day_advice"],
+            "hour": personal["hour_advice"],
+        }
     return {
-        "title": "干支日报" if report["ten_masters"] else "干支",
+        "title": identity["label"] if identity else "干支日报" if report["ten_masters"] else "干支",
+        "badge": "个人日运" if identity else "十日主参考" if report["ten_masters"] else "公共干支",
         "date": instant.strftime("%Y.%m.%d"),
         "time": f"{instant.hour:02}时 · 北京时间",
         "lunar": "农历" + cal["lunar_date"],
@@ -57,13 +75,7 @@ def card_content(report: dict) -> dict:
             )
             for index in range(3)
         ],
-        "personal": {
-            "label": f"{personal['day_pillar']} · {personal['master']}{personal['element']}日主",
-            "today": personal["day_advice"],
-            "hour": personal["hour_advice"],
-        }
-        if personal
-        else None,
+        "personal": identity,
         "daily": [
             {
                 "master": p["master"] + p["element"],
@@ -81,8 +93,8 @@ def compact_text(report: dict) -> str:
     """The image fallback follows the same reduced information hierarchy."""
     view = card_content(report)
     lines = [
-        f"{view['title']} · {view['date']} {view['time']}",
-        "  ".join(value + label for label, value in view["pillars"]),
+        f"{view['title']} · {view['badge']} · {view['date']} {view['time']}",
+        "当前四柱：" + "  ".join(value + label for label, value in view["pillars"]),
         view["hour_range"],
         view["overview"],
     ]
@@ -93,7 +105,7 @@ def compact_text(report: dict) -> str:
         lines.append(view["graph"]["combinations"])
     if view["personal"]:
         p = view["personal"]
-        lines.append(p["label"])
+        lines.append(f"分析对象：{p['label']} · {p['master']}（{p['source']}）\n{p['scope']}")
         for label, advice in (("今日", p["today"]), ("此刻", p["hour"])):
             lines.append(
                 f"{label} · {advice['theme']}\n宜 {advice['yi'][0]}  /  忌 {advice['ji'][0]}"
@@ -112,7 +124,7 @@ class Renderer:
     def render(self, report: dict) -> bytes:
         view = card_content(report)
         offset = 340
-        height = (1100 if view["daily"] else 790 if view["personal"] else 490) + offset
+        height = (1100 if view["daily"] else 850 if view["personal"] else 490) + offset
         canvas = Image.new("RGB", (WIDTH, height), PAPER)
         draw = ImageDraw.Draw(canvas)
         fonts = {}
@@ -177,11 +189,17 @@ class Renderer:
                 if annotation:
                     text(annotation, (start[0] + end[0]) / 2, start[1] + 13, 16, MUTED, "center")
 
-        # One restrained red mark gives the calendar an identity without ornament.
-        draw.rounded_rectangle((40, 38, 48, 68), radius=3, fill=RED)
-        text(view["title"], 62, 36, 28)
+        # Put the selected natal identity first, separate from the current calendar.
+        accent = GREEN if view["personal"] else RED
+        title_size = 40 if view["personal"] else 32
+        draw.rounded_rectangle((40, 35, 48, 72), radius=3, fill=accent)
+        text(view["title"], 62, 30, title_size)
+        badge_x = 62 + draw.textlength(view["title"], font=font(title_size)) + 20
+        badge_width = draw.textlength(view["badge"], font=font(21)) + 26
+        draw.rounded_rectangle((badge_x, 34, badge_x + badge_width, 70), radius=9, fill=accent)
+        text(view["badge"], badge_x + 13, 41, 21, WHITE)
         text(view["date"], 920, 36, 28, align="right")
-        text(view["lunar"], 40, 89, 22, MUTED)
+        text("当前四柱 · " + view["lunar"], 40, 89, 22, MUTED)
         text(view["time"], 920, 89, 22, MUTED, "right")
 
         draw.rounded_rectangle((40, 140, 920, 520), radius=24, fill=WHITE)
@@ -250,20 +268,25 @@ class Renderer:
 
         if view["personal"]:
             p = view["personal"]
-            text(p["label"], 48, 439 + offset, 22, MUTED)
+            draw.rounded_rectangle((40, 773, 920, 870), radius=22, fill="#294D40")
+            text("分析对象", 66, 790, 18, "#C4D8CD")
+            text(p["label"], 66, 821, 34, WHITE)
+            draw.line((298, 795, 298, 860), fill="#597568", width=1)
+            text(p["master"] + " · " + p["source"], 326, 794, 22, "#C4D8CD")
+            text(p["scope"], 326, 834, 26, WHITE)
             for index, (label, advice) in enumerate(
-                (("今日", p["today"]), ("此刻 · " + view["hour_range"], p["hour"]))
+                (("个人 · 今日", p["today"]), ("个人 · " + view["hour_range"], p["hour"]))
             ):
                 x = 40 + index * 450
                 draw.rounded_rectangle(
-                    (x, 480 + offset, x + 430, 720 + offset), radius=22, fill=WHITE
+                    (x, 540 + offset, x + 430, 780 + offset), radius=22, fill=WHITE
                 )
-                text(label, x + 26, 505 + offset, 21, MUTED, max_width=380)
-                text(advice["theme"], x + 26, 550 + offset, 31, max_width=378)
-                text("宜", x + 26, 613 + offset, 24, GREEN)
-                text(advice["yi"][0], x + 71, 613 + offset, 25, max_width=332)
-                text("忌", x + 26, 659 + offset, 24, RED)
-                text(advice["ji"][0], x + 71, 659 + offset, 25, max_width=332)
+                text(label, x + 26, 565 + offset, 21, GREEN, max_width=380)
+                text(advice["theme"], x + 26, 610 + offset, 31, max_width=378)
+                text("宜", x + 26, 673 + offset, 24, GREEN)
+                text(advice["yi"][0], x + 71, 673 + offset, 25, max_width=332)
+                text("忌", x + 26, 719 + offset, 24, RED)
+                text(advice["ji"][0], x + 71, 719 + offset, 25, max_width=332)
         elif view["daily"]:
             draw.rounded_rectangle((40, 437 + offset, 920, 1032 + offset), radius=22, fill=WHITE)
             for title, x in (("日主", 64), ("今日主题", 177), ("宜", 495), ("忌", 704)):
