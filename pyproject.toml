@@ -1,0 +1,13 @@
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+exclude = [".dev", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+

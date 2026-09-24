@@ -1,0 +1,42 @@
+{
+  "day_boundary": {
+    "description": "日柱换日规则",
+    "type": "string",
+    "default": "midnight",
+    "options": ["midnight", "zi"],
+    "hint": "midnight=00:00 换日；zi=23:00 子初换日。默认北京时间，不做真太阳时校正。"
+  },
+  "daily_time": {
+    "description": "群日报时间（北京时间 HH:MM）",
+    "type": "string",
+    "default": "08:00",
+    "hint": "各群默认关闭，由群主、群管理员或 AstrBot 管理员使用 /干支日报 开 启用。修改后重载插件。"
+  },
+  "daily_grace_minutes": {
+    "description": "重启后当日日报允许补发的分钟数",
+    "type": "int",
+    "default": 30,
+    "hint": "1–180 分钟；超过窗口不补发。"
+  },
+  "daily_use_ai": {
+    "description": "日报使用当前群的模型撰写解读",
+    "type": "bool",
+    "default": true,
+    "hint": "通过 AstrBot 已配置模型调用。无模型或超时自动使用完整的规则简报。"
+  },
+  "daily_provider_id": {
+    "description": "日报模型 ID（留空跟随群会话）",
+    "type": "string",
+    "default": ""
+  },
+  "ai_timeout_seconds": {
+    "description": "日报模型调用超时秒数",
+    "type": "int",
+    "default": 45
+  },
+  "chart_font_path": {
+    "description": "自定义中文字体路径（留空使用内置字体）",
+    "type": "string",
+    "default": ""
+  }
+}
