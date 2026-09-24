@@ -177,6 +177,7 @@ def build_report(
     report = {
         "rule_version": RULE_VERSION,
         "calendar": cal.to_dict(),
+        "pillar_graph": pillar_graph(cal),
         "day_flow": day_flow,
         "hour_flow": flow([("时", cal.hour, 1.0)], cal.month[1]),
         "personal": personal(profile, cal, day_flow) if profile else None,
@@ -186,6 +187,73 @@ def build_report(
         "scope": "传统文化日常安排参考；环境权重不是吉凶概率。",
     }
     return report
+
+
+def element_relation(left: str, right: str) -> dict:
+    """Direction: 1 = left/top to right/bottom; -1 = reverse; 0 = peers."""
+    if left == right:
+        return {"kind": "同气", "direction": 0}
+    if GENERATES[left] == right:
+        return {"kind": "生", "direction": 1}
+    if GENERATES[right] == left:
+        return {"kind": "生", "direction": -1}
+    if CONTROLS[left] == right:
+        return {"kind": "克", "direction": 1}
+    return {"kind": "克", "direction": -1}
+
+
+def pillar_graph(cal: CalendarSnapshot) -> dict:
+    """Schematic relations, without asserting strength, successful control or transformation."""
+    columns = []
+    for label, value in (("年", cal.year), ("月", cal.month), ("日", cal.day), ("时", cal.hour)):
+        columns.append(
+            {
+                "label": label,
+                "stem": value[0],
+                "branch": value[1],
+                "stem_element": STEM_ELEMENT[value[0]],
+                "branch_element": STEM_ELEMENT[HIDDEN[value[1]][0]],
+                "hidden": [
+                    {"stem": stem, "element": STEM_ELEMENT[stem]} for stem in HIDDEN[value[1]]
+                ],
+            }
+        )
+    stem_combinations, branch_relations = [], []
+    partners = dict(zip("甲乙丙丁戊己庚辛壬癸", "己庚辛壬癸甲乙丙丁戊"))
+    for i, first in enumerate(columns):
+        for second in columns[i + 1 :]:
+            if partners[first["stem"]] == second["stem"]:
+                pair = "".join(sorted((first["stem"], second["stem"]), key=STEMS.index))
+                if pair not in stem_combinations:
+                    stem_combinations.append(pair)
+            for relation in branch_links(first["branch"], second["branch"]):
+                if relation.startswith("日支同"):
+                    continue
+                short = relation.split("：", 1)[0].replace("六", "")
+                reverse = short[1] + short[0] + short[2:]
+                if short not in branch_relations and reverse not in branch_relations:
+                    branch_relations.append(short)
+    notes = []
+    if stem_combinations:
+        notes.append("干合 " + "、".join(stem_combinations) + "（未定化）")
+    if branch_relations:
+        notes.append("支间 " + "、".join(branch_relations))
+    return {
+        "columns": columns,
+        "stem_edges": [
+            element_relation(a["stem_element"], b["stem_element"])
+            for a, b in zip(columns, columns[1:])
+        ],
+        "branch_edges": [
+            element_relation(a["branch_element"], b["branch_element"])
+            for a, b in zip(columns, columns[1:])
+        ],
+        "vertical_edges": [
+            element_relation(c["stem_element"], c["branch_element"]) for c in columns
+        ],
+        "combinations": " · ".join(notes),
+        "scope": "横向只画相邻柱；纵向以地支本气为参照；列出全部藏干。箭头是五行基础关系，不证明制化成功。",
+    }
 
 
 def agent_payload(report: dict) -> str:

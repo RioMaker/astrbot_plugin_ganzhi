@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -14,8 +15,52 @@ from astrbot_plugin_ganzhi.engine import (
     agent_payload,
     branch_links,
     build_report,
+    element_relation,
+    pillar_graph,
     ten_god,
 )
+
+
+@pytest.mark.parametrize(
+    "left,right,kind,direction",
+    [
+        ("木", "火", "生", 1),
+        ("火", "木", "生", -1),
+        ("金", "木", "克", 1),
+        ("木", "金", "克", -1),
+        ("水", "水", "同气", 0),
+    ],
+)
+def test_relation_arrows_point_to_recipient(left, right, kind, direction):
+    assert element_relation(left, right) == {"kind": kind, "direction": direction}
+
+
+def test_pillar_graph_hidden_stems_and_vertical_direction():
+    cal = snapshot(datetime(2026, 9, 24, 8, tzinfo=BEIJING))
+    graph = pillar_graph(cal)
+    assert ["".join(x["stem"] for x in c["hidden"]) for c in graph["columns"]] == [
+        "丁己",
+        "辛",
+        "己癸辛",
+        "戊乙癸",
+    ]
+    assert graph["stem_edges"] == [
+        {"kind": "同气", "direction": 0},
+        {"kind": "克", "direction": 1},
+        {"kind": "生", "direction": 1},
+    ]
+    assert graph["branch_edges"][1] == {"kind": "生", "direction": -1}  # 丑土生酉金
+    assert graph["vertical_edges"][2] == {"kind": "生", "direction": -1}  # 丑土生辛金
+    assert graph["vertical_edges"][3] == {"kind": "克", "direction": -1}  # 辰土克壬水
+    assert "干合 丙辛、丁壬（未定化）" in graph["combinations"]
+    assert "午丑害" in graph["combinations"] and "酉辰合" in graph["combinations"]
+    assert build_report(cal)["pillar_graph"] == graph
+
+
+def test_repeated_pillars_do_not_repeat_combination_labels():
+    base = snapshot(datetime(2026, 9, 24, 8, tzinfo=BEIJING))
+    graph = pillar_graph(replace(base, year="甲子", month="己丑", day="甲子", hour="己丑"))
+    assert graph["combinations"] == "干合 甲己（未定化） · 支间 子丑合"
 
 
 @pytest.mark.parametrize(

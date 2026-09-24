@@ -82,7 +82,7 @@ def capture(event):
     )
 
 
-@register("astrbot_plugin_ganzhi", "Rio", "干支纪时、日主日运与群日报", "0.1.1")
+@register("astrbot_plugin_ganzhi", "Rio", "干支纪时、日主日运与群日报", "0.1.2")
 class GanzhiPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
