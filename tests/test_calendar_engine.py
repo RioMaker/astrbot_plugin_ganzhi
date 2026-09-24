@@ -172,10 +172,11 @@ def test_day_flow_hour_independent_and_personal_evidence():
     other = build_report(pm, parse_profile("辛巳"))
     assert report["day_flow"] == other["day_flow"]
     assert report["personal"]["hour_god"] != other["personal"]["hour_god"]
-    assert sum(report["day_flow"]["percent"].values()) == pytest.approx(100, abs=0.2)
+    assert "percent" not in report["day_flow"]
+    assert report["current_flow"] != other["current_flow"]
     assert report["personal"]["day_god"] == "比肩"
     assert report["personal"]["hour_god"] == "伤官"
-    assert report["day_flow"]["dominant"][0] == "金"
+    assert report["day_flow"]["elements"]["金"]["presence"] == "透藏皆见"
     assert report["day_flow"]["season_states"]["金"] == "旺"
     assert report["personal"]["day_hidden"]
 

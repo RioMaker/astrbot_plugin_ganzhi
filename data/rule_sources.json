@@ -1,0 +1,133 @@
+{
+  "version": "ganzhi-rules-v2",
+  "reviewed_on": "2026-09-24",
+  "sources": {
+    "S01": {
+      "title": "三命通会 卷一",
+      "url": "https://zh.wikisource.org/wiki/三命通會/卷一",
+      "sections": [
+        "论五行生克"
+      ],
+      "revision_url": "https://zh.wikisource.org/w/index.php?title=三命通會/卷一&oldid=2271026"
+    },
+    "S02": {
+      "title": "三命通会 卷二",
+      "url": "https://zh.wikisource.org/wiki/三命通會/卷二",
+      "sections": [
+        "论人元司事",
+        "论五行旺相休囚死并寄生十二宫",
+        "论十干合",
+        "论十干化气",
+        "论支元六合",
+        "论支元三合",
+        "论六害",
+        "论三刑",
+        "论冲击"
+      ],
+      "revision_url": "https://zh.wikisource.org/w/index.php?title=三命通會/卷二&oldid=2292392"
+    },
+    "S03": {
+      "title": "滴天髓阐微",
+      "url": "https://zh.wikisource.org/wiki/滴天髓闡微",
+      "sections": [
+        "十七、衰旺",
+        "十九、源流",
+        "二十、通关",
+        "十一、方局"
+      ],
+      "revision_url": "https://zh.wikisource.org/w/index.php?title=滴天髓闡微&oldid=2600158"
+    },
+    "S04": {
+      "title": "渊海子平",
+      "url": "https://zh.wikisource.org/wiki/淵海子平",
+      "sections": [
+        "又地支藏遁歌",
+        "论五行生剋制化各有所喜所害例",
+        "论日为主"
+      ],
+      "quality_note": "页面注明来源待核、录入未完成；不单凭此页采用争议规则。",
+      "revision_url": "https://zh.wikisource.org/w/index.php?title=淵海子平&oldid=2593607"
+    }
+  },
+  "rules": {
+    "WX01": {
+      "name": "生克同气与泄气",
+      "sources": [
+        "S01",
+        "S04"
+      ]
+    },
+    "WX02": {
+      "name": "藏干",
+      "sources": [
+        "S04",
+        "S02"
+      ]
+    },
+    "WX03": {
+      "name": "月令与杂气",
+      "sources": [
+        "S02",
+        "S03"
+      ]
+    },
+    "WX04": {
+      "name": "通根与透干",
+      "sources": [
+        "S03",
+        "S04"
+      ]
+    },
+    "WX05": {
+      "name": "位置与承接",
+      "sources": [
+        "S03"
+      ]
+    },
+    "WX06": {
+      "name": "通关候选",
+      "sources": [
+        "S03"
+      ]
+    },
+    "WX07": {
+      "name": "制约候选",
+      "sources": [
+        "S01",
+        "S04"
+      ]
+    },
+    "WX08": {
+      "name": "干合与合化条件",
+      "sources": [
+        "S02"
+      ]
+    },
+    "WX09": {
+      "name": "支合冲刑害",
+      "sources": [
+        "S02"
+      ]
+    },
+    "WX10": {
+      "name": "三合三会与缺支",
+      "sources": [
+        "S02",
+        "S03"
+      ]
+    },
+    "WX11": {
+      "name": "生克反作用待辨",
+      "sources": [
+        "S04",
+        "S03"
+      ]
+    },
+    "WX12": {
+      "name": "当前环境与本命分离",
+      "sources": [],
+      "implementation_policy": true
+    }
+  },
+  "policy": "原典提供概念及表项；证据字段、候选筛选门槛与资料不足时的处理是本插件实现约定。详见 references/bazi_notes.md。"
+}

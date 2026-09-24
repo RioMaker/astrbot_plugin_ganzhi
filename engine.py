@@ -6,37 +6,26 @@ import json
 from pathlib import Path
 
 from .calendar_core import STEMS, CalendarSnapshot, Profile
-
-RULE_VERSION = "ganzhi-rules-v1"
-ELEMENTS = "木火土金水"
-STEM_ELEMENT = dict(zip(STEMS, "木木火火土土金金水水"))
-GENERATES = dict(zip(ELEMENTS, "火土金水木"))
-CONTROLS = dict(zip(ELEMENTS, "土金水木火"))
-HIDDEN = dict(
-    zip(
-        "子丑寅卯辰巳午未申酉戌亥",
-        (
-            "癸",
-            "己癸辛",
-            "甲丙戊",
-            "乙",
-            "戊乙癸",
-            "丙庚戊",
-            "丁己",
-            "己丁乙",
-            "庚壬戊",
-            "辛",
-            "戊辛丁",
-            "壬甲",
-        ),
-    )
+from .wuxing import (
+    BRANCH_PAIRS,
+    CONTROLS,
+    ELEMENTS,
+    GENERATES,
+    HIDDEN,
+    RULE_VERSION,
+    STEM_ELEMENT,
+    element_relation,
+    flow,
 )
+
 ROOT = Path(__file__).resolve().parent
 TEN_GODS = json.loads((ROOT / "data" / "ten_gods.json").read_text(encoding="utf-8"))
 REFERENCE_TEXT = "\n\n".join(
     (ROOT / "references" / name).read_text(encoding="utf-8")
-    for name in ("calendar.md", "interpretation.md")
+    for name in ("calendar.md", "interpretation.md", "bazi_notes.md")
 )
+
+RULE_CATALOG = json.loads((ROOT / "data" / "rule_sources.json").read_text(encoding="utf-8"))
 
 
 def ten_god(master: str, other: str) -> str:
@@ -55,70 +44,20 @@ def ten_god(master: str, other: str) -> str:
     return pair[0 if same_polarity else 1]
 
 
-def season_states(month_branch: str) -> dict[str, str]:
-    dominant = STEM_ELEMENT[HIDDEN[month_branch][0]]
-    return {
-        dominant: "旺",
-        GENERATES[dominant]: "相",
-        CONTROLS[dominant]: "死",
-        next(x for x in ELEMENTS if GENERATES[x] == dominant): "休",
-        next(x for x in ELEMENTS if CONTROLS[x] == dominant): "囚",
-    }
-
-
-def flow(pillars: list[tuple[str, str, float]], month_branch: str) -> dict:
-    amounts = dict.fromkeys(ELEMENTS, 0.0)
-    evidence = []
-    for label, pillar, weight in pillars:
-        amounts[STEM_ELEMENT[pillar[0]]] += weight
-        hidden = HIDDEN[pillar[1]]
-        ratios = {1: (1.0,), 2: (0.7, 0.3), 3: (0.6, 0.3, 0.1)}[len(hidden)]
-        for stem, ratio in zip(hidden, ratios):
-            amounts[STEM_ELEMENT[stem]] += weight * ratio
-        evidence.append({"position": label, "pillar": pillar, "hidden": hidden, "weight": weight})
-    states = season_states(month_branch)
-    factor = {"旺": 1.4, "相": 1.2, "休": 1.0, "囚": 0.8, "死": 0.6}
-    weighted = {x: amounts[x] * factor[states[x]] for x in ELEMENTS}
-    total = sum(weighted.values())
-    percent = {x: round(weighted[x] / total * 100, 1) for x in ELEMENTS}
-    paths, weak_paths = [], []
-    for x in ELEMENTS:
-        dest = GENERATES[x]
-        (paths if min(percent[x], percent[dest]) >= 10 else weak_paths).append(f"{x}生{dest}")
-    order = sorted(ELEMENTS, key=lambda x: -percent[x])
-    return {
-        "percent": percent,
-        "raw": {x: round(amounts[x], 3) for x in ELEMENTS},
-        "season_states": states,
-        "dominant": order[:2],
-        "low": [x for x in ELEMENTS if percent[x] < 10],
-        "generation_paths": paths,
-        "weak_paths": weak_paths,
-        "control_paths": [
-            f"{x}克{CONTROLS[x]}" for x in ELEMENTS if min(percent[x], percent[CONTROLS[x]]) >= 10
-        ],
-        "evidence": evidence,
-        "summary": f"{month_branch}月；环境以{order[0]}为主，{order[1]}次之。"
-        + ("可见生路：" + "、".join(paths) + "。" if paths else "相生承接偏弱。")
-        + (
-            "偏少：" + "、".join(x for x in ELEMENTS if percent[x] < 10) + "。"
-            if any(percent[x] < 10 for x in ELEMENTS)
-            else "五行均有一定呈现。"
-        ),
-    }
-
-
 def branch_links(natal: str, present: str) -> list[str]:
     pair = frozenset((natal, present))
     out = []
-    for name, pairs, detail in (
-        ("六合", ("子丑", "寅亥", "卯戌", "辰酉", "巳申", "午未"), "适合协调，合不等于已经合化"),
-        ("六冲", ("子午", "丑未", "寅申", "卯酉", "辰戌", "巳亥"), "安排留余地，变动处多复核"),
-        ("六害", ("子未", "丑午", "寅巳", "卯辰", "申亥", "酉戌"), "把隐含期待说清楚，减少误解"),
+    for kind, name, detail in (
+        ("合", "六合", "适合协调，合不等于已经合化"),
+        ("冲", "六冲", "安排留余地，变动处多复核"),
+        ("害", "六害", "把隐含期待说清楚，减少误解"),
+        ("刑", "刑", "检查相处边界；仅见刑的关系，不断定刑局或灾祸"),
     ):
-        if pair in [frozenset(x) for x in pairs]:
+        if pair in [frozenset(x) for x in BRANCH_PAIRS[kind]]:
             out.append(f"{natal}{present}{name}：{detail}")
     if natal == present:
+        if natal in "辰午酉亥":
+            out.append(f"{natal}{present}自刑：重复支的结构提示，不据此断吉凶")
         out.append(f"日支同为{natal}：重复议题适合回顾，不据此断吉凶")
     return out
 
@@ -127,22 +66,29 @@ def personal(profile: Profile, cal: CalendarSnapshot, day_flow: dict) -> dict:
     master = profile.stem
     day_god, hour_god = ten_god(master, cal.day[0]), ten_god(master, cal.hour[0])
     own = STEM_ELEMENT[master]
-    proportions = day_flow["percent"]
-    relations = {
-        "同我": proportions[own],
-        "我生": proportions[GENERATES[own]],
-        "我克": proportions[CONTROLS[own]],
-        "生我": proportions[next(x for x in ELEMENTS if GENERATES[x] == own)],
-        "克我": proportions[next(x for x in ELEMENTS if CONTROLS[x] == own)],
+    relation_elements = {
+        "同我": own,
+        "我生": GENERATES[own],
+        "我克": CONTROLS[own],
+        "生我": next(x for x in ELEMENTS if GENERATES[x] == own),
+        "克我": next(x for x in ELEMENTS if CONTROLS[x] == own),
     }
-    emphasis = max(relations, key=relations.get)
-    environment_note = {
-        "同我": "同类力量较显，协作时说清资源和分工",
-        "我生": "产出议题较显，表达和创作也要安排休息",
-        "我克": "管理议题较显，落实事项前核对可用精力与成本",
-        "生我": "支持与输入较显，学习整理后及时转为行动",
-        "克我": "规则和要求较显，先明确标准再分步推进",
-    }[emphasis]
+    relations = {
+        name: {
+            "element": element,
+            "presence": day_flow["elements"][element]["presence"],
+            "season_state": day_flow["season_states"][element],
+            "evidence_ref": "day_flow.elements." + element,
+        }
+        for name, element in relation_elements.items()
+    }
+    environment_note = (
+        day_flow["month"]["note"]
+        + "；环境中"
+        + own
+        + day_flow["elements"][own]["presence"]
+        + "。这是当前环境证据，不能代替本命根气或喜忌。"
+    )
     return {
         # Do not return the exact birthday to the model or draw it on a group image.
         "day_pillar": profile.day_pillar,
@@ -154,8 +100,9 @@ def personal(profile: Profile, cal: CalendarSnapshot, day_flow: dict) -> dict:
         "hour_god": hour_god,
         "day_advice": TEN_GODS[day_god],
         "hour_advice": TEN_GODS[hour_god],
-        "relations_percent": relations,
-        "environment_note": f"{emphasis}环境占比 {relations[emphasis]:.1f}%：{environment_note}。",
+        "relations_evidence": relations,
+        "environment_note": environment_note,
+        "rule_ids": ["WX04", "WX12"],
         "day_hidden": [{"stem": x, "god": ten_god(master, x)} for x in HIDDEN[cal.day[1]]],
         "hour_hidden": [{"stem": x, "god": ten_god(master, x)} for x in HIDDEN[cal.hour[1]]],
         "day_links": branch_links(profile.day_pillar[1], cal.day[1])
@@ -171,73 +118,63 @@ def personal(profile: Profile, cal: CalendarSnapshot, day_flow: dict) -> dict:
 def build_report(
     cal: CalendarSnapshot, profile: Profile | None = None, daily: bool = False
 ) -> dict:
-    day_flow = flow(
-        [("年", cal.year, 0.5), ("月", cal.month, 1.5), ("日", cal.day, 1.0)], cal.month[1]
-    )
+    day_pillars = [("年", cal.year), ("月", cal.month), ("日", cal.day)]
+    day_flow = flow(day_pillars, cal.month[1])
+    current_flow = flow([*day_pillars, ("时", cal.hour)], cal.month[1])
     report = {
         "rule_version": RULE_VERSION,
         "calendar": cal.to_dict(),
-        "pillar_graph": pillar_graph(cal),
+        "pillar_graph": pillar_graph(cal, current_flow),
+        "current_flow": current_flow,
         "day_flow": day_flow,
-        "hour_flow": flow([("时", cal.hour, 1.0)], cal.month[1]),
+        "hour_flow": flow([("时", cal.hour)], cal.month[1]),
         "personal": personal(profile, cal, day_flow) if profile else None,
         "ten_masters": [personal(Profile("stem", x, x), cal, day_flow) for x in STEMS]
         if daily
         else [],
-        "scope": "传统文化日常安排参考；环境权重不是吉凶概率。",
+        "scope": "传统文化日常安排参考；候选制化不是确定结论，不推断本命强弱。",
     }
     return report
 
 
-def element_relation(left: str, right: str) -> dict:
-    """Direction: 1 = left/top to right/bottom; -1 = reverse; 0 = peers."""
-    if left == right:
-        return {"kind": "同气", "direction": 0}
-    if GENERATES[left] == right:
-        return {"kind": "生", "direction": 1}
-    if GENERATES[right] == left:
-        return {"kind": "生", "direction": -1}
-    if CONTROLS[left] == right:
-        return {"kind": "克", "direction": 1}
-    return {"kind": "克", "direction": -1}
-
-
-def pillar_graph(cal: CalendarSnapshot) -> dict:
-    """Schematic relations, without asserting strength, successful control or transformation."""
-    columns = []
-    for label, value in (("年", cal.year), ("月", cal.month), ("日", cal.day), ("时", cal.hour)):
-        columns.append(
-            {
-                "label": label,
-                "stem": value[0],
-                "branch": value[1],
-                "stem_element": STEM_ELEMENT[value[0]],
-                "branch_element": STEM_ELEMENT[HIDDEN[value[1]][0]],
-                "hidden": [
-                    {"stem": stem, "element": STEM_ELEMENT[stem]} for stem in HIDDEN[value[1]]
-                ],
-            }
+def pillar_graph(cal: CalendarSnapshot, current_flow: dict | None = None) -> dict:
+    """The image and Agent share the same evidence; only the image labels are shortened."""
+    analysis = (
+        current_flow
+        if current_flow is not None
+        else flow(
+            [("年", cal.year), ("月", cal.month), ("日", cal.day), ("时", cal.hour)], cal.month[1]
         )
-    stem_combinations, branch_relations = [], []
-    partners = dict(zip("甲乙丙丁戊己庚辛壬癸", "己庚辛壬癸甲乙丙丁戊"))
-    for i, first in enumerate(columns):
-        for second in columns[i + 1 :]:
-            if partners[first["stem"]] == second["stem"]:
-                pair = "".join(sorted((first["stem"], second["stem"]), key=STEMS.index))
-                if pair not in stem_combinations:
-                    stem_combinations.append(pair)
-            for relation in branch_links(first["branch"], second["branch"]):
-                if relation.startswith("日支同"):
-                    continue
-                short = relation.split("：", 1)[0].replace("六", "")
-                reverse = short[1] + short[0] + short[2:]
-                if short not in branch_relations and reverse not in branch_relations:
-                    branch_relations.append(short)
+    )
+    columns = [
+        {
+            key: c[key]
+            for key in ("label", "stem", "branch", "stem_element", "branch_element", "hidden")
+        }
+        for c in analysis["columns"]
+    ]
+    pairs = list(dict.fromkeys(x["glyphs"] for x in analysis["stem_combinations"]))
+    branch_notes, keys = [], set()
+    for item in analysis["branch_relations"]:
+        key = (frozenset(item["glyphs"]), item["kind"])
+        if key not in keys:
+            keys.add(key)
+            branch_notes.append(item["glyphs"] + item["kind"])
     notes = []
-    if stem_combinations:
-        notes.append("干合 " + "、".join(stem_combinations) + "（未定化）")
-    if branch_relations:
-        notes.append("支间 " + "、".join(branch_relations))
+    if pairs:
+        notes.append("干合 " + "、".join(pairs) + "（未定化）")
+    if branch_notes:
+        notes.append(
+            "支间 " + "、".join(branch_notes[:2]) + ("等" if len(branch_notes) > 2 else "")
+        )
+    complete = [x for x in analysis["branch_groups"] if x["complete"]]
+    if complete:
+        item = complete[0]
+        notes.append(item["glyphs"] + item["kind"] + "齐支")
+    # Fixed compact card; the full set remains in current_flow.
+    caption = " · ".join(notes)
+    if len(caption) > 44:
+        caption = " · ".join(notes[:2])
     return {
         "columns": columns,
         "stem_edges": [
@@ -251,7 +188,8 @@ def pillar_graph(cal: CalendarSnapshot) -> dict:
         "vertical_edges": [
             element_relation(c["stem_element"], c["branch_element"]) for c in columns
         ],
-        "combinations": " · ".join(notes),
+        "combinations": caption,
+        "rule_ids": ["WX01", "WX02", "WX05", "WX08", "WX09", "WX10"],
         "scope": "横向只画相邻柱；纵向以地支本气为参照；列出全部藏干。箭头是五行基础关系，不证明制化成功。",
     }
 
@@ -262,7 +200,8 @@ def agent_payload(report: dict) -> str:
             "calculated": report,
             "reference_document": REFERENCE_TEXT,
             "ten_god_reference": TEN_GODS,
-            "instruction": "先用 calculated 说明依据，再参考文档解读；生日只接受阳历。不要编造本命、改写干支或把象意当确定预测。",
+            "rule_catalog": RULE_CATALOG,
+            "instruction": "先读 calculated 的月令、透藏与根气，再读 mechanisms、checks、issues；按 rule_ids 回查笔记和 rule_catalog。candidate 仅为候选，不能写成已制住、已通关或已合化；未评定的力量不可另编分数。生日只接受阳历，不编造本命，不改写原干支五行。",
         },
         ensure_ascii=False,
     )
@@ -276,7 +215,6 @@ def format_text(report: dict) -> str:
         f"{cal['year']}年 {cal['month']}月 {cal['day']}日 {cal['hour']}时 · {cal['hour_range']}",
         "日柱：" + ("零点换日" if cal["boundary"] == "midnight" else "子初换日"),
         report["day_flow"]["summary"],
-        "环境占比：" + " / ".join(f"{x} {v}%" for x, v in report["day_flow"]["percent"].items()),
     ]
     if report["personal"]:
         p = report["personal"]

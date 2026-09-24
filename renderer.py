@@ -27,9 +27,7 @@ def card_content(report: dict) -> dict:
     """Keep the public card concise; the full evidence remains in agent_payload."""
     cal = report["calendar"]
     flow = report["day_flow"]
-    paths = flow["generation_paths"][:2]
-    overview = flow["dominant"][0] + "气较显"
-    overview += " · " + ("、".join(paths) if paths else "相生承接偏弱")
+    overview = flow["display_summary"]
     instant = datetime.fromisoformat(cal["instant"])
     personal = report["personal"]
     return {

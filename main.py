@@ -82,7 +82,7 @@ def capture(event):
     )
 
 
-@register("astrbot_plugin_ganzhi", "Rio", "干支纪时、日主日运与群日报", "0.1.2")
+@register("astrbot_plugin_ganzhi", "Rio", "干支纪时、日主日运与群日报", "0.2.0")
 class GanzhiPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -334,7 +334,8 @@ class GanzhiPlugin(Star):
                         prompt="请写简短群公共干支日报，控制在250–400字。先用一句话报当日干支与五行流通，"
                         "然后逐个覆盖甲乙丙丁戊己庚辛壬癸十个日主，每个只写一行短建议。"
                         "图片已有宜忌表，不要重复整表，不写长篇原理、百分比、免责声明和结尾总结。"
-                        "不针对群成员，不编造完整命局，不改写工具历法结果。依据：\n"
+                        "不针对群成员，不编造完整命局，不改写工具历法结果。"
+                        "候选通关、制约和合化须保留条件语气，不能说成已经成功。依据：\n"
                         + agent_payload(report),
                     )
 
