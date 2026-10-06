@@ -2,12 +2,14 @@ import asyncio
 import inspect
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from astrbot_plugin_ganzhi.calendar_core import BEIJING
 from astrbot_plugin_ganzhi.main import GanzhiPlugin, capture
+from astrbot_plugin_ganzhi.renderer import compact_text
 from conftest import Context, Event
 
 
@@ -135,7 +137,7 @@ async def test_profile_tool_only_current_sender():
 async def test_daily_contains_ten_masters_and_model_failure_fallback(ai_failure):
     ctx = Context()
     ctx.failure = ai_failure
-    p = GanzhiPlugin(ctx, {})
+    p = GanzhiPlugin(ctx, {"daily_append_text": True})
     # Include a binding to make sure group broadcasts never consult it.
     await p._bind(capture(Event()), "20010319")
 
@@ -149,9 +151,96 @@ async def test_daily_contains_ten_masters_and_model_failure_fallback(ai_failure)
     assert ctx.sent[0][1].chain[0].type == "image"
     assert "2001-03-19" not in ctx.prompts[0]["prompt"]
     if ai_failure:
-        assert "规则简报" in ctx.sent[0][1].chain[-1].text
+        text = ctx.sent[0][1].chain[-1].text
+        assert all(stem in text for stem in "甲乙丙丁戊己庚辛壬癸")
     else:
         assert "AI 日报" in ctx.sent[0][1].chain[-1].text
+
+
+@pytest.mark.parametrize("config", [{}, {"daily_use_ai": True}, {"daily_use_ai": False}])
+async def test_daily_defaults_and_legacy_configs_send_only_image(config):
+    ctx = Context()
+    p = GanzhiPlugin(ctx, config)
+    await p._bind(capture(Event()), "20010319")
+    reports = []
+    render = p.renderer.render
+
+    def record(report):
+        reports.append(report)
+        return render(report)
+
+    p.renderer.render = record
+
+    async def guard(send):
+        return await send()
+
+    await p._publish_daily(
+        "qq-one:GroupMessage:20001", datetime(2026, 10, 6, 8, tzinfo=BEIJING), guard
+    )
+    assert len(ctx.sent) == 1
+    umo, message = ctx.sent[0]
+    assert umo == "qq-one:GroupMessage:20001"
+    assert [item.type for item in message.chain] == ["image"]
+    assert message.chain[0].data.startswith(b"\x89PNG")
+    assert ctx.prompts == []
+    assert reports[0]["personal"] is None
+    assert [row["master"] for row in reports[0]["ten_masters"]] == list("甲乙丙丁戊己庚辛壬癸")
+
+
+async def test_schema_defaults_send_only_image():
+    schema = json.loads((Path(__file__).parents[1] / "_conf_schema.json").read_text("utf-8"))
+    defaults = {key: row["default"] for key, row in schema.items()}
+    assert defaults["daily_append_text"] is False
+    await test_daily_defaults_and_legacy_configs_send_only_image(defaults)
+
+
+async def test_opt_in_rule_text_does_not_call_model():
+    ctx = Context()
+    p = GanzhiPlugin(ctx, {"daily_append_text": True, "daily_use_ai": False})
+    instant = datetime(2026, 10, 6, 8, tzinfo=BEIJING)
+
+    async def guard(send):
+        return await send()
+
+    await p._publish_daily("qq-one:GroupMessage:20001", instant, guard)
+    chain = ctx.sent[0][1].chain
+    assert [item.type for item in chain] == ["image", "plain"]
+    report = await p._report(capture(Event()), instant=instant)
+    assert compact_text(report).splitlines()[1] in chain[1].text
+    assert all(stem in chain[1].text for stem in "甲乙丙丁戊己庚辛壬癸")
+    assert ctx.prompts == []
+
+
+@pytest.mark.parametrize("broken_render", [False, True])
+async def test_daily_render_failure_sends_nothing_and_retries(monkeypatch, broken_render):
+    from astrbot_plugin_ganzhi import scheduler as scheduler_module
+
+    ctx = Context()
+    p = GanzhiPlugin(ctx, {"daily_append_text": True})
+    working_renderer = p.renderer
+    clock = [datetime(2026, 10, 6, 8, tzinfo=BEIJING)]
+    monkeypatch.setattr(scheduler_module, "now_beijing", lambda: clock[0])
+    umo = "qq-one:GroupMessage:20001"
+
+    def fail(report):
+        raise OSError("render unavailable")
+
+    p.renderer = SimpleNamespace(render=fail) if broken_render else None
+    await p.scheduler.set_enabled(umo, True)
+    await p.scheduler.tick()
+    state = await p.scheduler.status(umo)
+    assert state["attempts"] == 1 and not state.get("sent_date")
+    assert ctx.sent == [] and ctx.prompts == []
+    await p.scheduler.tick()
+    assert (await p.scheduler.status(umo))["attempts"] == 1
+    p.renderer = working_renderer
+    p.config["daily_append_text"] = False
+    clock[0] += timedelta(minutes=5)
+    await p.scheduler.tick()
+    assert len(ctx.sent) == 1
+    assert [item.type for item in ctx.sent[0][1].chain] == ["image"]
+    state = await p.scheduler.status(umo)
+    assert state["attempts"] == 2 and state["sent_date"] == "2026-10-06"
 
 
 def test_aliases_and_tool_arg_contract():

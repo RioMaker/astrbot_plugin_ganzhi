@@ -18,11 +18,17 @@
     "default": 30,
     "hint": "1–180 分钟；超过窗口不补发。"
   },
+  "daily_append_text": {
+    "description": "日报图片附加文字解读",
+    "type": "bool",
+    "default": false,
+    "hint": "默认只发送图片，不调用日报模型；开启后才会在图片后附加文字。旧版 AI 开关不会自动开启配文。"
+  },
   "daily_use_ai": {
     "description": "日报使用当前群的模型撰写解读",
     "type": "bool",
     "default": true,
-    "hint": "通过 AstrBot 已配置模型调用。无模型或超时自动使用完整的规则简报。"
+    "hint": "仅在开启附加文字时生效。通过 AstrBot 已配置模型调用；无模型或超时改用规则文字，关闭此项也使用规则文字。"
   },
   "daily_provider_id": {
     "description": "日报模型 ID（留空跟随群会话）",

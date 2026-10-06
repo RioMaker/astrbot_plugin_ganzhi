@@ -27,7 +27,7 @@ HELP_TEXT = """ganzhi · 干支纪时与日主日运
 /干支 help：帮助。
 
 /干支日报 开|关|状态（也支持 /干支 日报 开|关|状态）
-日报按当前群单独设置，默认关闭，每天北京时间 {daily_time} 播报。
+日报按当前群单独设置，默认关闭，每天北京时间 {daily_time} 播报，默认只发送图片。
 群主、群管理员、AstrBot 管理员可开关；包含五行流通与十天干日主简览。
 
 别名 /干支纪年法、/干支纪时法 与 /干支 完全等效，后面同样可带生日、日柱和子命令。
@@ -82,7 +82,7 @@ def capture(event):
     )
 
 
-@register("astrbot_plugin_ganzhi", "Rio", "干支纪时、日主日运与群日报", "0.2.4")
+@register("astrbot_plugin_ganzhi", "Rio", "干支纪时、日主日运与群日报", "0.3.0")
 class GanzhiPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -102,7 +102,9 @@ class GanzhiPlugin(Star):
             self.renderer = Renderer(str(config.get("chart_font_path", "") or ""))
         except (OSError, ValueError) as exc:
             self.renderer = None
-            logger.warning(f"ganzhi 中文字体不可用，将返回文字：{type(exc).__name__}")
+            logger.warning(
+                f"ganzhi 中文字体不可用，普通查询返回文字、日报无法出图：{type(exc).__name__}"
+            )
         self.scheduler = DailyScheduler(
             self.get_kv_data,
             self.put_kv_data,
@@ -185,7 +187,7 @@ class GanzhiPlugin(Star):
             return "仅群主、群管理员或 AstrBot 管理员可以设置本群日报。"
         await self.scheduler.set_enabled(scope.group_umo, action == "开")
         return f"本群干支日报已{action}。" + (
-            f"每天北京时间 {self.daily_time} 播报五行流通和十天干日主简览。"
+            f"每天北京时间 {self.daily_time} 发送五行流通和十天干日主简览图片，默认不配文字。"
             if action == "开"
             else ""
         )
@@ -195,7 +197,7 @@ class GanzhiPlugin(Star):
         profile = parse_profile(content) if content else await self._profile(scope)
         return build_report(snapshot(instant, self.boundary), profile)
 
-    async def _components(self, report):
+    async def _components(self, report, *, image_only=False):
         if self.renderer is not None:
             try:
                 async with self.render_gate:
@@ -203,6 +205,9 @@ class GanzhiPlugin(Star):
                 return [Image.fromBytes(png)]
             except Exception as exc:
                 logger.warning(f"ganzhi 图片生成失败：{type(exc).__name__}")
+        if image_only:
+            # Let the scheduler record a failed attempt and retry without sending text.
+            raise RuntimeError("日报图片暂不可用")
         return [Plain("图片暂不可用，以下为文字内容：\n" + compact_text(report))]
 
     @filter.command("干支", alias={"干支纪年法", "干支纪时法"})
@@ -319,8 +324,10 @@ class GanzhiPlugin(Star):
 
     async def _publish_daily(self, umo, instant, guarded_send):
         report = build_report(snapshot(instant, self.boundary), daily=True)
+        components = await self._components(report, image_only=True)
+        append_text = bool(self.config.get("daily_append_text", False))
         narration = ""
-        if self.config.get("daily_use_ai", True):
+        if append_text and self.config.get("daily_use_ai", True):
             try:
 
                 async def generate():
@@ -347,9 +354,8 @@ class GanzhiPlugin(Star):
                 narration = ""
                 logger.warning(f"ganzhi 日报使用规则简报：{type(exc).__name__}")
         # The deterministic card includes all ten stems even if the model omits one.
-        components = await self._components(report)
         if narration:
             components.append(Plain("AI 日报解读\n" + narration))
-        elif self.config.get("daily_use_ai", True):
-            components.append(Plain("本次 AI 解读暂不可用，已附完整规则简报。"))
+        elif append_text:
+            components.append(Plain(compact_text(report)))
         await guarded_send(lambda: self.context.send_message(umo, MessageChain(components)))

@@ -24,7 +24,7 @@ for name, command, profile, daily in (
     ("stem", "/干支 甲；或绑定甲日主后 /干支", parse_profile("甲"), False),
     ("daily", "/干支日报 开 → 每日 08:00 推送", None, True),
 ):
-    cal = snapshot(datetime(2026, 9, 24, 8 if daily else 14, tzinfo=BEIJING))
+    cal = snapshot(datetime(2026, 10, 6, 8 if daily else 14, tzinfo=BEIJING))
     path = out / f"{name}.png"
     report = build_report(cal, profile, daily)
     path.write_bytes(renderer.render(report))
@@ -54,19 +54,19 @@ cards = "\n".join(
     '<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width,initial-scale=1">'
     "<title>干支 · 指令图片一览</title><style>"
-    "body{margin:0;background:#091722;color:#ecf2f5;font:16px/1.7 system-ui,sans-serif}"
+    "body{margin:0;background:#f3f0e7;color:#29362f;font:16px/1.7 system-ui,sans-serif}"
     "header,main{max-width:1440px;margin:auto;padding:24px}h1{margin:0;font-size:28px}"
-    "p{margin:8px 0;color:#9aaebd}main{display:grid;grid-template-columns:"
+    "p{margin:8px 0;color:#72796f}main{display:grid;grid-template-columns:"
     "repeat(auto-fit,minmax(min(100%,420px),1fr));gap:28px;padding-top:0}"
     "section{min-width:0}h2{font-size:18px;min-height:62px;margin:0 0 12px}"
-    "img{display:block;width:100%;border-radius:14px;border:1px solid #2b4153}"
+    "img{display:block;width:100%;border-radius:4px;border:1px solid #d9dcce}"
     "</style><header><h1>干支 · 指令图片一览</h1>"
-    "<p>同一渲染器实算：2026-09-24 北京时间，普通查询 14:00，日报 08:00。"
+    "<p>现代东方风格 · 同一渲染器实算：2026-10-06 北京时间，普通查询 14:00，日报 08:00。"
     "示例资料不代表用户绑定。</p>"
     "<p>/干支纪年法、/干支纪时法与/干支等价。Agent 默认也发送对应图片。"
     "同一资料绑定后查询与临时输入的图片相同。</p>"
     "<p>help、绑定、我的、解绑、日报开/关/状态返回文字；开启日报只确认订阅，"
-    "到设定时间才推送日报图。点击图片可查看原尺寸。</p></header><main>"
+    "到设定时间才推送日报图，默认只发图片、不配文字、不调用日报模型。点击图片可查看原尺寸。</p></header><main>"
     + cards
     + "</main></html>\n",
     encoding="utf-8",
